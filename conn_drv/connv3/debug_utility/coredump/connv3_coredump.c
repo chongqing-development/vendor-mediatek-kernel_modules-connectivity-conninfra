@@ -499,11 +499,19 @@ int connv3_coredump_start(void* handler, const int drv, const char *reason, cons
 	connv3_dump_set_dump_state(ctx, CONNV3_COREDUMP_STATE_START);
 	osal_gettimeofday(&g_dump_start_time);
 
-	ret = osal_lock_sleepable_lock(&ctx->ctx_lock);
-	if (ret) {
-		pr_notice("[%s] get lock fail, ret = %d\n", __func__, ret);
-		return CONNV3_COREDUMP_ERR_GET_LOCK_FAIL;
-	}
+        ret = osal_lock_sleepable_lock(&ctx->ctx_lock);
+        if (ret) {
+                pr_notice("[%s] get lock fail, ret = %d\n", __func__, ret);
+                return CONNV3_COREDUMP_ERR_GET_LOCK_FAIL;
+        }
+
+	//#ifdef OPLUS_FEATURE_WIFI_MINIDUMP
+	/* Parse issue info */
+	connv3_coredump_info_analysis(ctx, drv, reason, dump_msg);
+
+	/* Send to native */
+	ret = conndump_netlink_send_to_native(ctx->conn_type, "[M]", (char*)dump_msg, strlen(dump_msg));
+	//#endif /* OPLUS_FEATURE_WIFI_MINIDUMP */
 
 	if (fw_version != NULL)
 		fw_version_len = strlen(fw_version);
@@ -524,11 +532,16 @@ int connv3_coredump_start(void* handler, const int drv, const char *reason, cons
 	} else {
 		pr_notice("[%s] fw_version is null", __func__);
 	}
-	/* Parse issue info */
+
+	//#ifndef OPLUS_FEATURE_WIFI_MINIDUMP
+	/*
+	// Parse issue info
 	connv3_coredump_info_analysis(ctx, drv, reason, dump_msg);
 
-	/* Send to native */
+	// Send to native
 	ret = conndump_netlink_send_to_native(ctx->conn_type, "[M]", (char*)dump_msg, strlen(dump_msg));
+	*/
+	//#endif /* OPLUS_FEATURE_WIFI_MINIDUMP */
 
 	osal_unlock_sleepable_lock(&ctx->ctx_lock);
 	return 0;
