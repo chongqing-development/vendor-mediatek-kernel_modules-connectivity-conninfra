@@ -70,6 +70,7 @@ static char g_conn_adaptor_dump_buf[CONN_ADAPTOR_DBG_DUMP_BUF_SIZE];
 static OSAL_SLEEPABLE_LOCK g_conn_adaptor_dump_lock;
 static int g_dump_buf_len;
 static char *g_dump_buf_ptr;
+static int g_dump_buf_write_len;
 
 /*******************************************************************************
 *                              F U N C T I O N S
@@ -123,7 +124,7 @@ static ssize_t conn_adaptor_dbg_write(struct file *filp, const char __user *buff
 
 	{
 		int offset = 0;
-		char* buf = g_conn_adaptor_dump_buf;
+		char* dump_buf = g_conn_adaptor_dump_buf;
 		int ret, sz;
 
 		ret = osal_lock_sleepable_lock(&g_conn_adaptor_dump_lock);
@@ -132,12 +133,20 @@ static ssize_t conn_adaptor_dbg_write(struct file *filp, const char __user *buff
 			return ret;
 		}
 
+		if (g_dump_buf_len != 0) {
+			pr_info("[%s] dump data not clean, g_dump_buf_len = %d\n",
+				__func__, g_dump_buf_len);
+			osal_unlock_sleepable_lock(&g_conn_adaptor_dump_lock);
+			return len;
+		}
+
 		if (g_kern_dbg_handler) {
-			sz = (*g_kern_dbg_handler)(x, y, z, buf, CONN_ADAPTOR_DBG_DUMP_BUF_SIZE);
+			sz = (*g_kern_dbg_handler)(x, y, z, dump_buf, CONN_ADAPTOR_DBG_DUMP_BUF_SIZE);
 			if (sz > 0)
 				offset += sz;
 		}
 		g_dump_buf_len = offset;
+		g_dump_buf_write_len = offset;
 		osal_unlock_sleepable_lock(&g_conn_adaptor_dump_lock);
 	}
 
@@ -158,7 +167,8 @@ static ssize_t conn_adaptor_dbg_read(struct file *filp, char __user *buf, size_t
 	if (g_dump_buf_len == 0)
 		goto exit;
 
-	if (*f_pos == 0)
+	/* first read, move ptr to the begin */
+	if (g_dump_buf_write_len == g_dump_buf_len)
 		g_dump_buf_ptr = g_conn_adaptor_dump_buf;
 
 	dump_len = g_dump_buf_len >= count ? count : g_dump_buf_len;
@@ -172,7 +182,7 @@ static ssize_t conn_adaptor_dbg_read(struct file *filp, char __user *buf, size_t
 	*f_pos += dump_len;
 	g_dump_buf_len -= dump_len;
 	g_dump_buf_ptr += dump_len;
-	pr_info("conn_dbg:after read,wmt for dump info buffer len(%d)\n", g_dump_buf_len);
+	pr_info("conn_dbg:after read, wmt for dump info buffer len(%d)\n", g_dump_buf_len);
 
 	ret = dump_len;
 exit:
